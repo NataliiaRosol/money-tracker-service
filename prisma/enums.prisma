@@ -1,0 +1,9 @@
+enum SystemRole {
+    USER
+    ADMIN
+}
+
+enum CategoryType {
+    EXPENSE
+    INCOME
+}
