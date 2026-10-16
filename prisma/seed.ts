@@ -1,5 +1,7 @@
 import { prisma } from '../src/lib/prisma.js';
 import { CategoryType } from '../src/generated/prisma/client.js';
+import { env } from '../src/config/env.js';
+import { TEST_USER_EMAIL, TEST_USER_ID } from '../src/config/dev.js';
 
 const { EXPENSE, INCOME } = CategoryType;
 
@@ -42,7 +44,8 @@ const categories = [
     { name: 'Інше', type: INCOME, icon: 'circle' },
 ];
 
-async function main() {
+
+async function seedSystemCategories() {
     let created = 0;
 
     for (const c of categories) {
@@ -58,6 +61,45 @@ async function main() {
     }
 
     console.log(`Seed: створено ${created}, пропущено ${categories.length - created}`);
+}
+
+async function seedTestUser() {
+    const user = await prisma.user.upsert({
+        where: { email: TEST_USER_EMAIL },
+        update: {},
+        create: {
+            id: TEST_USER_ID,
+            email: TEST_USER_EMAIL,
+            name: 'Test User',
+            //passwordHash: await bcrypt.hash('password123', 10),
+            emailVerifiedAt: new Date(),
+        },
+    });
+
+    // Кілька власних категорій, щоб перевіряти "системні + мої"
+    // const own = [
+    //     { name: 'Кава', type: EXPENSE, icon: 'coffee', color: '#8b5a2b' },
+    //     { name: 'Спортзал', type: EXPENSE, icon: 'dumbbell', color: '#22c55e' },
+    // ];
+
+    // for (const c of own) {
+    //     await prisma.category.upsert({
+    //         where: { userId_name_type: { userId: user.id, name: c.name, type: c.type } },
+    //         update: {},
+    //         create: { ...c, userId: user.id },
+    //     });
+    // }
+
+    console.log(`Seed: тестовий користувач ${user.email} (id: ${user.id})`);
+}
+
+
+async function main() {
+    await seedSystemCategories();
+
+    if (env.NODE_ENV !== 'production') {
+        await seedTestUser();
+    }
 }
 
 main()
