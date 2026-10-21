@@ -7,7 +7,7 @@ function toAppError(err: unknown): AppError {
     if (err instanceof AppError) return err;
 
     if (err instanceof ZodError) {
-        return new AppError(400, 'Validation failed', 'VALIDATION_ERROR', z.flattenError(err).fieldErrors);
+        return new AppError(400, 'Validation failed', 'VALIDATION_ERROR', z.flattenError(err));
     }
 
     if (err instanceof Prisma.PrismaClientKnownRequestError) {

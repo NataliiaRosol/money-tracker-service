@@ -15,4 +15,5 @@ export class AppError extends Error {
     static badRequest(msg: string, details?: unknown) { return new AppError(400, msg, 'BAD_REQUEST', details); }
     static conflict(msg: string) { return new AppError(409, msg, 'CONFLICT'); }
     static unauthorized(msg = 'Unauthorized') { return new AppError(401, msg, 'UNAUTHORIZED'); }
+    static forbidden(msg = 'Forbidden') { return new AppError(403, msg, 'FORBIDDEN'); }
 }
