@@ -63,7 +63,7 @@ export function sessionMaxAgeExceeded(createdAt: Date) {
 
 const refreshCookieOptions = {
     httpOnly: true,
-    secure: env.NODE_ENV === 'production',
+    secure: env.BACKEND_DOMAIN.startsWith('https://'),
     sameSite: 'strict',      // якщо фронт на іншому домені — 'none' + CORS credentials
     path: '/api/auth',       // cookie йде тільки на auth-ендпоінти
 } as const;

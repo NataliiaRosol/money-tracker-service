@@ -16,7 +16,10 @@ const envSchema = z.object({
     SESSION_MAX_DAYS: z.coerce.number().int().positive().default(90),
 
     //   // CORS / фронтенд
-    //   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+    // Адреси фронта і бекенда (з протоколом і портом)
+    FRONTEND_DOMAIN: z.url().default('http://localhost:5173').transform((u) => new URL(u).origin),
+    BACKEND_DOMAIN: z.url().default('http://localhost:4000').transform((u) => new URL(u).origin),
+
 
     //   // Опціональні сервіси
     //   REDIS_URL: z.string().url().optional(),
