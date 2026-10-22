@@ -13,4 +13,5 @@ model User {
     updatedAt       DateTime   @updatedAt
 
     categories Category[]
+    sessions   Session[]
 }

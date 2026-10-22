@@ -10,8 +10,10 @@ const envSchema = z.object({
     DATABASE_URL: z.url(),
 
     // Авторизація
-    //   JWT_SECRET: z.string().min(32),
-    //   JWT_EXPIRES_IN: z.string().default('15m'),
+    JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_EXPIRES_IN: z.string().default('15m'),
+    REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
+    SESSION_MAX_DAYS: z.coerce.number().int().positive().default(90),
 
     //   // CORS / фронтенд
     //   CORS_ORIGIN: z.string().default('http://localhost:5173'),
