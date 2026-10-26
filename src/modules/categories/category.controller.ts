@@ -3,6 +3,7 @@ import { categoryIdParamsSchema, createCategorySchema, listCategoriesQuerySchema
 import { createCategory, deleteCategory, getCategories, getCategoryById, updateCategory } from "./category.service.js";
 
 
+
 export async function createCategoryController(req: Request, res: Response) {
     const data = createCategorySchema.parse(req.body);
     const category = await createCategory(req.userId, data);

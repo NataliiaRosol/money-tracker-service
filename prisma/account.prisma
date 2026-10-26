@@ -1,0 +1,30 @@
+model Account {
+    id             String      @id @default(uuid())
+    ownerId        String
+    owner          User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+    name           String      @db.VarChar(50)
+    type           AccountType @default(CARD)
+    currency       String      @db.Char(3)
+    initialBalance Decimal     @default(0) @db.Decimal(19, 4)
+    color          String?     @db.VarChar(7)
+    archived       Boolean     @default(false)
+    createdAt      DateTime    @default(now())
+    updatedAt      DateTime    @updatedAt
+
+    members AccountMember[]
+    transactions Transaction[] 
+
+    @@index([ownerId])
+}
+
+model AccountMember {
+    accountId String
+    account   Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+    userId    String
+    user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+    role      AccountRole
+    createdAt DateTime    @default(now())
+
+    @@id([accountId, userId])
+    @@index([userId])
+}

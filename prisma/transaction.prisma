@@ -1,0 +1,21 @@
+model Transaction {
+    id             String      @id @default(uuid())
+    account        Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+    accountId      String       
+    category       Category    @relation(fields: [categoryId], references: [id], onDelete: NoAction)
+    categoryId     String
+    author         User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+    authorId       String?
+    amount         Decimal     @db.Decimal(19, 4)
+    date           DateTime    @db.Date
+    description    String?     @db.VarChar(255)
+    createdAt      DateTime    @default(now())
+    updatedAt      DateTime    @updatedAt
+
+    //comments Comment[]  
+    //attachments Attachment[]
+
+    @@index([accountId, date])
+    @@index([categoryId])
+    @@index([authorId])
+}

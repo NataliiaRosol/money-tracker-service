@@ -42,12 +42,18 @@ export async function getCategories(userId: string, query: ListCategoriesQuery) 
     });
 }
 
-export async function updateCategory(userId: string, categoryId: string, data: UpdateCategoryInput) {
-
+export async function getCategoryById(userId: string, categoryId: string) {
     const category = await prisma.category.findFirst({
         where: { id: categoryId, userId },
     });
     if (!category) throw AppError.notFound('Category not found');
+    return category;
+
+}
+
+export async function updateCategory(userId: string, categoryId: string, data: UpdateCategoryInput) {
+
+    const category = await getCategoryById(userId, categoryId);
 
     if (data.name !== undefined) {
         const duplicate = await prisma.category.findFirst({

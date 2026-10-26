@@ -7,3 +7,16 @@ enum CategoryType {
     EXPENSE
     INCOME
 }
+
+enum AccountType {
+    CARD
+    CASH
+    SAVINGS
+    OTHER
+}
+
+enum AccountRole {
+    OWNER
+    EDITOR
+    VIEWER
+}
