@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { categoryIdParamsSchema, createCategorySchema, listCategoriesQuerySchema, updateCategorySchema } from "./category.schema.js";
-import { createCategory, deleteCategory, getCategories, updateCategory } from "./category.service.js";
-
+import { createCategory, deleteCategory, getCategories, getCategoryById, updateCategory } from "./category.service.js";
 
 
 export async function createCategoryController(req: Request, res: Response) {
@@ -15,6 +14,13 @@ export async function getCategoriesController(req: Request, res: Response) {
     const categories = await getCategories(req.userId, query);
     res.status(200).json({ success: true, data: categories });
 }
+
+export async function getCategoryController(req: Request, res: Response) {
+    const { id } = categoryIdParamsSchema.parse(req.params);
+    const category = await getCategoryById(req.userId, id);
+    res.status(200).json({ success: true, data: category });
+}
+
 
 export async function updateCategoryController(req: Request, res: Response) {
     const { id } = categoryIdParamsSchema.parse(req.params);
