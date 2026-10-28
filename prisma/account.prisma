@@ -6,8 +6,10 @@ model Account {
     type           AccountType @default(CARD)
     currency       String      @db.Char(3)
     initialBalance Decimal     @default(0) @db.Decimal(19, 4)
+    icon           String?     @db.VarChar(50)
     color          String?     @db.VarChar(7)
     archived       Boolean     @default(false)
+    includeInTotal Boolean     @default(true)
     createdAt      DateTime    @default(now())
     updatedAt      DateTime    @updatedAt
 

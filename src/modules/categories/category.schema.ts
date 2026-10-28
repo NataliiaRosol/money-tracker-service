@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { CategoryType } from '../../generated/prisma/enums.js';
+import { CATEGORY_ICONS } from './category.icons.js';
 
 const name = z.string().trim().min(1, 'Name is required').max(50, 'Max 50 characters');
-const icon = z.string().trim().min(1).max(50);
+const icon = z.enum(CATEGORY_ICONS);
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Color must be in #RRGGBB format');
 
 // POST /categories — body

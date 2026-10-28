@@ -1,7 +1,7 @@
 import { AppError } from "../../errors/AppError.js";
 import { Prisma, type CategoryType } from "../../generated/prisma/browser.js";
 import { prisma } from "../../lib/prisma.js";
-import type { CreateAccountInput, ListAccountsQuery } from "./account.schema.js";
+import type { CreateAccountInput, ListAccountsQuery, UpdateAccountInput } from "./account.schema.js";
 
 async function sumByAccount(accountIds: string[], type: CategoryType, range: { from?: Date; to?: Date } = {}) {
     const rows = await prisma.transaction.groupBy({
@@ -42,18 +42,73 @@ export async function getAccounts(userId: string, query: ListAccountsQuery) {
     return accounts.map((account) => {
         const totalIncome = incomeSums.get(account.id) ?? zero;
         const totalExpense = expenseSums.get(account.id) ?? zero;
+        const isMine = account.ownerId === userId;
         return {
             ...account,
             balance: account.initialBalance.plus(totalIncome).minus(totalExpense),
+            isMine
         };
     });
+}
+
+// Accounts in different currencies can't be summed without exchange rates, so the total is per currency
+export async function getTotalBalance(userId: string) {
+    const accounts = await getAccounts(userId, { includeArchived: false });
+
+    const zero = new Prisma.Decimal(0);
+    const totals = new Map<string, typeof zero>();
+    for (const account of accounts) {
+        if (!account.includeInTotal) continue;
+        const current = totals.get(account.currency) ?? zero;
+        totals.set(account.currency, current.plus(account.balance));
+    }
+
+    return Array.from(totals, ([currency, balance]) => ({ currency, balance }));
+}
+
+export async function getAccountById(userId: string, accountId: string) {
+    const account = await prisma.account.findUnique({
+        where: {
+            id: accountId,
+            ownerId: userId,
+        }
+    });
+
+    if (!account) {
+        throw AppError.notFound("Account not found");
+    }
+
+    // transaction.date is @db.Date (stored as UTC midnight), so month boundaries are in UTC too
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+    const accountIds = [account.id];
+    const [incomeSums, expenseSums, monthIncomeSums, monthExpenseSums] = await Promise.all([
+        sumByAccount(accountIds, 'INCOME'),
+        sumByAccount(accountIds, 'EXPENSE'),
+        sumByAccount(accountIds, 'INCOME', { from: monthStart, to: nextMonthStart }),
+        sumByAccount(accountIds, 'EXPENSE', { from: monthStart, to: nextMonthStart }),
+    ])
+
+    const zero = new Prisma.Decimal(0);
+    const totalIncome = incomeSums.get(account.id) ?? zero;
+    const totalExpense = expenseSums.get(account.id) ?? zero;
+
+    return {
+        ...account,
+        balance: account.initialBalance.plus(totalIncome).minus(totalExpense),
+        isMine: account.ownerId === userId,
+        monthIncome: monthIncomeSums.get(account.id) ?? zero,
+        monthExpense: monthExpenseSums.get(account.id) ?? zero,
+    };
 }
 
 export async function createAccount(userId: string, data: CreateAccountInput) {
     const existing = await prisma.account.findFirst({
         where: {
             ownerId: userId,
-            name: data.name
+            name: { equals: data.name, mode: 'insensitive' },
         }
     });
 
@@ -61,14 +116,59 @@ export async function createAccount(userId: string, data: CreateAccountInput) {
         throw AppError.conflict("Account with this name already exists");
     }
 
-    return prisma.account.create({
+    const account = await prisma.account.create({
         data: {
             ownerId: userId,
             name: data.name,
-            type: data.type ?? 'CARD',
             currency: data.currency,
-            initialBalance: data.initialBalance ?? '0.0000',
+            ...(data.type && { type: data.type }),
+            ...(data.initialBalance && { initialBalance: data.initialBalance }),
+            icon: data.icon ?? null,
             color: data.color ?? null,
+            includeInTotal: data.includeInTotal ?? data.type !== 'SAVINGS',
         }
     });
-}   
+
+    return { ...account, balance: account.initialBalance };
+}
+
+export async function updateAccount(userId: string, accountId: string, data: UpdateAccountInput) {
+    const account = await prisma.account.findFirst({
+        where: { id: accountId, ownerId: userId },
+    });
+    if (!account) throw AppError.notFound('Account not found');
+
+    if (data.name !== undefined) {
+        const duplicate = await prisma.account.findFirst({
+            where: {
+                ownerId: userId,
+                name: { equals: data.name, mode: 'insensitive' },
+                id: { not: accountId },
+            },
+        });
+        if (duplicate) throw AppError.conflict('Account with this name already exists');
+    }
+
+    await prisma.account.update({
+        where: { id: accountId },
+        data: {
+            ...(data.name !== undefined && { name: data.name }),
+            ...(data.type !== undefined && { type: data.type }),
+            ...(data.initialBalance !== undefined && { initialBalance: data.initialBalance }),
+            ...(data.icon !== undefined && { icon: data.icon }),
+            ...(data.color !== undefined && { color: data.color }),
+            ...(data.archived !== undefined && { archived: data.archived }),
+            ...(data.includeInTotal !== undefined && { includeInTotal: data.includeInTotal }),
+        },
+    });
+
+    return getAccountById(userId, accountId);
+}
+
+
+export async function deleteAccount(userId: string, accountId: string) {
+    const { count } = await prisma.account.deleteMany({
+        where: { id: accountId, ownerId: userId },
+    });
+    if (count === 0) throw AppError.notFound('Account not found');
+}

@@ -33,7 +33,5 @@ export async function updateCategoryController(req: Request, res: Response) {
 export async function deleteCategoryController(req: Request, res: Response) {
     const { id } = categoryIdParamsSchema.parse(req.params);
     await deleteCategory(req.userId, id);
-
     res.status(204).send();
-
 }

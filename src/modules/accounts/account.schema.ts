@@ -2,11 +2,14 @@ import { z } from 'zod';
 import { AccountType } from '../../generated/prisma/enums.js';
 
 const name = z.string().trim().min(1, 'Name is required').max(50, 'Max 50 characters');
+const CURRENCIES = new Set(Intl.supportedValuesOf('currency'));
 const currency = z
     .string()
     .trim()
     .toUpperCase()
-    .regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter ISO 4217 code');
+    .regex(/^[A-Z]{3}$/, { message: 'Currency must be a 3-letter ISO 4217 code', abort: true })
+    .refine((c) => CURRENCIES.has(c), 'Unknown currency');
+const icon = z.string().trim().min(1, 'Icon is required').max(50, 'Max 50 characters');
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Color must be in #RRGGBB format');
 
 // Decimal(19, 4): up to 15 integer digits and 4 fractional digits.
@@ -22,7 +25,9 @@ export const createAccountSchema = z.object({
     type: z.enum(AccountType).optional(),
     currency,
     initialBalance: amount.optional(),
+    icon: icon.optional(),
     color: color.optional(),
+    includeInTotal: z.boolean().optional(),
 });
 
 // PATCH /accounts/:id — body
@@ -32,8 +37,10 @@ export const updateAccountSchema = z
         name: name.optional(),
         type: z.enum(AccountType).optional(),
         initialBalance: amount.optional(),
+        icon: icon.nullable().optional(),
         color: color.nullable().optional(),
         archived: z.boolean().optional(),
+        includeInTotal: z.boolean().optional(),
     })
     .refine((data) => Object.keys(data).length > 0, {
         message: 'At least one field is required',
