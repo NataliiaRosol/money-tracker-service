@@ -1,5 +1,6 @@
 import { AppError } from "../../errors/AppError.js";
 import { Prisma, type CategoryType } from "../../generated/prisma/browser.js";
+import { convert, getExchangeRates } from "../../lib/currency.js";
 import { prisma } from "../../lib/prisma.js";
 import type { CreateAccountInput, ListAccountsQuery, UpdateAccountInput } from "./account.schema.js";
 
@@ -51,19 +52,35 @@ export async function getAccounts(userId: string, query: ListAccountsQuery) {
     });
 }
 
-// Accounts in different currencies can't be summed without exchange rates, so the total is per currency
+// Total of all included accounts converted to the user's base currency by NBU rates
 export async function getTotalBalance(userId: string) {
-    const accounts = await getAccounts(userId, { includeArchived: false });
+    const [user, accounts, rates] = await Promise.all([
+        prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { baseCurrency: true } }),
+        getAccounts(userId, { includeArchived: false }),
+        getExchangeRates(),
+    ]);
 
+    // sum per currency first, so each currency is converted once
     const zero = new Prisma.Decimal(0);
-    const totals = new Map<string, typeof zero>();
+    const sums = new Map<string, typeof zero>();
     for (const account of accounts) {
         if (!account.includeInTotal) continue;
-        const current = totals.get(account.currency) ?? zero;
-        totals.set(account.currency, current.plus(account.balance));
+        const current = sums.get(account.currency) ?? zero;
+        sums.set(account.currency, current.plus(account.balance));
     }
 
-    return Array.from(totals, ([currency, balance]) => ({ currency, balance }));
+    const byCurrency = Array.from(sums, ([currency, balance]) => ({ currency, balance }));
+    const total = byCurrency.reduce(
+        (acc, { currency, balance }) => acc.plus(convert(balance, currency, user.baseCurrency, rates)),
+        zero,
+    );
+
+    return {
+        currency: user.baseCurrency,
+        total: total.toDecimalPlaces(2),
+        byCurrency,
+        ratesDate: rates.date,
+    };
 }
 
 export async function getAccountById(userId: string, accountId: string) {

@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { AccountType } from '../../generated/prisma/enums.js';
+import { CURRENCIES } from '../../config/constants.js';
 
 const name = z.string().trim().min(1, 'Name is required').max(50, 'Max 50 characters');
-const CURRENCIES = new Set(Intl.supportedValuesOf('currency'));
+// only currencies we have exchange rates for, otherwise the account can't be counted in the total
 const currency = z
     .string()
     .trim()
     .toUpperCase()
-    .regex(/^[A-Z]{3}$/, { message: 'Currency must be a 3-letter ISO 4217 code', abort: true })
-    .refine((c) => CURRENCIES.has(c), 'Unknown currency');
+    .pipe(z.enum(CURRENCIES, `Currency must be one of: ${CURRENCIES.join(', ')}`));
 const icon = z.string().trim().min(1, 'Icon is required').max(50, 'Max 50 characters');
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Color must be in #RRGGBB format');
 
