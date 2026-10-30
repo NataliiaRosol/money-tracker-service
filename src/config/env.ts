@@ -1,0 +1,37 @@
+// src/config/env.ts
+import 'dotenv/config';
+import { z } from 'zod';
+
+const envSchema = z.object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    PORT: z.coerce.number().int().positive().default(3000),
+
+    // База даних
+    DATABASE_URL: z.url(),
+
+    // Авторизація
+    JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_EXPIRES_IN: z.string().default('15m'),
+    REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
+    SESSION_MAX_DAYS: z.coerce.number().int().positive().default(90),
+
+    //   // CORS / фронтенд
+    // Адреси фронта і бекенда (з протоколом і портом)
+    FRONTEND_DOMAIN: z.url().default('http://localhost:5173').transform((u) => new URL(u).origin),
+    BACKEND_DOMAIN: z.url().default('http://localhost:4000').transform((u) => new URL(u).origin),
+
+
+    //   // Опціональні сервіси
+    //   REDIS_URL: z.string().url().optional(),
+    LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+});
+
+const parsed = envSchema.safeParse(process.env);
+
+if (!parsed.success) {
+    console.error('❌ Невалідні змінні оточення:', z.flattenError(parsed.error).fieldErrors);
+    process.exit(1);
+}
+
+export const env = parsed.data;
+export type Env = z.infer<typeof envSchema>;

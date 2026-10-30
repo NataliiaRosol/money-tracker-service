@@ -1,0 +1,27 @@
+model Session {
+    id         String    @id @default(uuid())
+    userId     String
+    user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    tokenHash  String    @unique // sha256 поточного refresh token
+    expiresAt  DateTime
+    revokedAt  DateTime?
+    userAgent  String?
+    ip         String?
+    lastUsedAt DateTime  @default(now())
+    createdAt  DateTime  @default(now())
+
+    usedTokens UsedRefreshToken[]
+
+    @@index([userId])
+}
+
+// refresh token-и, які вже обміняли на нові. Зберігаємо всі, а не тільки останній,
+// щоб упізнати повторне використання будь-якого старого токена сесії
+model UsedRefreshToken {
+    tokenHash String   @id // sha256 старого refresh token
+    sessionId String
+    session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+    usedAt    DateTime @default(now()) // коли його обміняли на новий
+
+    @@index([sessionId])
+}

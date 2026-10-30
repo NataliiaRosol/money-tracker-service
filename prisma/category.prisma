@@ -1,13 +1,16 @@
 model Category {
   id        String       @id @default(uuid())
-  userId    String?      // null = системна категорія
+  userId    String?
   user      User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String       @db.VarChar(50)
   type      CategoryType
-  icon      String?      // назва іконки, напр. "shopping-cart"
+  icon      String? // назва іконки, напр. "shopping-cart"
   color     String?      @db.VarChar(7) // "#22c55e"
+  isDefault Boolean      @default(false)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
+
+  transactions Transaction[]
 
   @@unique([userId, name, type])
   @@index([userId])
