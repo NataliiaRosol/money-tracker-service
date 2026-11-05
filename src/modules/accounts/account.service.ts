@@ -79,6 +79,7 @@ export async function getTotalBalance(userId: string) {
         currency: user.baseCurrency,
         total: total.toDecimalPlaces(2),
         byCurrency,
+        rates: rates.uah,
         ratesDate: rates.date,
     };
 }
