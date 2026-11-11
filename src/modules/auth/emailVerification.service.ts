@@ -64,7 +64,6 @@ export async function verifyEmail(token: string) {
 
     await prisma.$transaction([
         prisma.user.update({ where: { id: record.userId }, data: { emailVerifiedAt: new Date() } }),
-        // the link is single-use
         prisma.emailVerificationToken.deleteMany({ where: { userId: record.userId } }),
     ]);
 }
