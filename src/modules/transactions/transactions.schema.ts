@@ -25,7 +25,8 @@ const description = z.string().trim().max(255, 'Max 255 characters');
 
 // POST /transactions — body
 export const createTransactionSchema = z.object({
-    accountId: z.uuid(),
+    // omitted → the user's default account (PATCH /settings/default-account)
+    accountId: z.uuid().optional(),
     categoryId: z.uuid(),
     amount,
     date,
@@ -50,11 +51,17 @@ export const transactionIdParamsSchema = z.object({
     id: z.uuid(),
 });
 
+export const TRANSACTION_SORTS = ['date_desc', 'date_asc', 'amount_desc', 'amount_asc'] as const;
+
+export type TransactionSort = (typeof TRANSACTION_SORTS)[number];
+
 // GET /transactions?accountIds=a,b&categoryIds=c&type=EXPENSE&from=2026-11-01&to=2026-11-30
-//     &search=coffee&minAmount=100&maxAmount=500&page=1&limit=20 — query
+//     &search=coffee&minAmount=100&maxAmount=500&sort=date_desc&page=1&limit=20 — query
 // all ranges are inclusive
 export const listTransactionsQuerySchema = z
     .object({
+        // newest first by default
+        sort: z.enum(TRANSACTION_SORTS).default('date_desc'),
         accountIds: uuidList.optional(),
         categoryIds: uuidList.optional(),
         // only two types, so "both" is the same as no filter

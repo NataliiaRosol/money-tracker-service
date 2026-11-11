@@ -3,10 +3,11 @@ import type { Session, User } from '../../generated/prisma/client.js';
 import { prisma } from '../../lib/prisma.js';
 import { DEFAULT_CATEGORIES } from '../categories/category.defaults.js';
 import type { LoginInput, RegisterInput } from './auth.schemas.js';
+import { trySendVerificationEmail } from './emailVerification.service.js';
 import { hashPassword, verifyPassword } from './password.js';
 import {
-    generateRefreshToken,
-    hashRefreshToken,
+    generateToken,
+    hashToken,
     refreshExpiresAt,
     sessionMaxAgeExceeded,
     signAccess,
@@ -24,7 +25,7 @@ const INVALID_REFRESH = 'Invalid or expired refresh token';
 // це паралельний запит того самого клієнта, а не крадіжка
 const REUSE_GRACE_MS = 10_000;
 
-function toPublicUser(user: User) {
+export function toPublicUser(user: User) {
     const { passwordHash: _, ...publicUser } = user;
     return publicUser;
 }
@@ -38,12 +39,12 @@ async function createSession(userId: string, meta: SessionMeta) {
         },
     });
 
-    const refreshToken = generateRefreshToken();
+    const refreshToken = generateToken();
 
     const session = await prisma.session.create({
         data: {
             userId,
-            tokenHash: hashRefreshToken(refreshToken),   // у БД — тільки хеш
+            tokenHash: hashToken(refreshToken),   // у БД — тільки хеш
             expiresAt: refreshExpiresAt(),
             userAgent: meta.userAgent ?? null,
             ip: meta.ip ?? null,
@@ -67,6 +68,8 @@ export async function register(data: RegisterInput, meta: SessionMeta) {
             categories: { createMany: { data: DEFAULT_CATEGORIES } },
         },
     });
+
+    await trySendVerificationEmail(user);
 
     const tokens = await createSession(user.id, meta);
     return { user: toPublicUser(user), ...tokens };
@@ -140,7 +143,7 @@ async function handleUsedToken(tokenHash: string) {
 export async function refresh(refreshToken: string | undefined) {
     if (!refreshToken) throw AppError.unauthorized(INVALID_REFRESH);
 
-    const tokenHash = hashRefreshToken(refreshToken);
+    const tokenHash = hashToken(refreshToken);
     const session = await prisma.session.findUnique({
         where: { tokenHash },
         include: { user: { select: { isBlocked: true } } },
@@ -151,14 +154,14 @@ export async function refresh(refreshToken: string | undefined) {
 
     // ротація: видаємо новий токен, а старий записуємо в історію.
     // Транзакція — щоб не вийшло, що токен змінився, а старий в історію не потрапив
-    const newRefreshToken = generateRefreshToken();
+    const newRefreshToken = generateToken();
     const now = new Date();
     const rotated = await prisma.$transaction(async (tx) => {
         // tokenHash у where — захист від гонки: якщо паралельний запит уже зробив ротацію, тут нічого не оновиться
         const { count } = await tx.session.updateMany({
             where: { id: session.id, tokenHash, revokedAt: null },
             data: {
-                tokenHash: hashRefreshToken(newRefreshToken),
+                tokenHash: hashToken(newRefreshToken),
                 expiresAt: refreshExpiresAt(),
                 lastUsedAt: now,
             },
@@ -181,7 +184,7 @@ export async function logout(refreshToken: string | undefined) {
     if (!refreshToken) return;
 
     await prisma.session.updateMany({
-        where: { tokenHash: hashRefreshToken(refreshToken), revokedAt: null },
+        where: { tokenHash: hashToken(refreshToken), revokedAt: null },
         data: { revokedAt: new Date() },
     });
 }

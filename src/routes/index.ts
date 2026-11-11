@@ -5,6 +5,7 @@ import { authRouter } from "../modules/auth/auth.routes.js";
 import { requireAuth } from "../middlewares/requireAuth.js";
 import { accountRouter } from "../modules/accounts/account.routes.js";
 import { transactionsRouter } from "../modules/transactions/transactions.routes.js";
+import { settingsRouter } from "../modules/settings/settings.routes.js";
 
 export const apiRouter = Router();
 
@@ -13,3 +14,4 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/categories', requireAuth, categoryRouter);
 apiRouter.use('/accounts', requireAuth, accountRouter);
 apiRouter.use('/transactions', requireAuth, transactionsRouter);
+apiRouter.use('/settings', requireAuth, settingsRouter);

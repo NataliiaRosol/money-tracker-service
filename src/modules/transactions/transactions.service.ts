@@ -1,7 +1,15 @@
 import { AppError } from "../../errors/AppError.js";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../../lib/prisma.js";
-import type { CreateTransactionInput, ListTransactionsQuery, UpdateTransactionInput } from "./transactions.schema.js";
+import type { CreateTransactionInput, ListTransactionsQuery, TransactionSort, UpdateTransactionInput } from "./transactions.schema.js";
+
+// the trailing unique fields keep the order stable, so pages never overlap or skip rows
+const transactionOrderBy = {
+    date_desc: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+    date_asc: [{ date: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    amount_desc: [{ amount: 'desc' }, { date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+    amount_asc: [{ amount: 'asc' }, { date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+} satisfies Record<TransactionSort, Prisma.TransactionOrderByWithRelationInput[]>;
 
 const transactionInclude = {
     account: { select: { id: true, name: true, currency: true, icon: true, color: true } },
@@ -21,6 +29,17 @@ async function assertAccountWritable(userId: string, accountId: string) {
     });
     if (!account) throw AppError.notFound('Account not found');
     if (account.archived) throw AppError.badRequest('Cannot add a transaction to an archived account');
+}
+
+async function resolveAccountId(userId: string, accountId: string | undefined) {
+    if (accountId) return accountId;
+
+    const user = await prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { defaultAccountId: true },
+    });
+    if (!user.defaultAccountId) throw AppError.badRequest('accountId is required: no default account is set');
+    return user.defaultAccountId;
 }
 
 // income/expense comes from the category, so the transaction gets its type from here
@@ -54,7 +73,7 @@ export async function getTransactions(userId: string, query: ListTransactionsQue
     const [items, total] = await Promise.all([
         prisma.transaction.findMany({
             where,
-            orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+            orderBy: transactionOrderBy[query.sort],
             skip: (page - 1) * limit,
             take: limit,
             include: transactionInclude,
@@ -74,14 +93,17 @@ export async function getTransactions(userId: string, query: ListTransactionsQue
 }
 
 export async function createTransaction(userId: string, data: CreateTransactionInput) {
+    const accountId = await resolveAccountId(userId, data.accountId);
+
+    // the default account is checked too: ownership and archived state could change since it was set
     await Promise.all([
-        assertAccountWritable(userId, data.accountId),
+        assertAccountWritable(userId, accountId),
         assertCategoryExists(userId, data.categoryId),
     ]);
 
     return prisma.transaction.create({
         data: {
-            accountId: data.accountId,
+            accountId,
             categoryId: data.categoryId,
             authorId: userId,
             amount: data.amount,

@@ -14,7 +14,8 @@ model Account {
     updatedAt      DateTime    @updatedAt
 
     members AccountMember[]
-    transactions Transaction[] 
+    transactions Transaction[]
+    defaultForUsers User[] @relation("UserDefaultAccount")
 
     @@index([ownerId])
 }

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
-import { loginSchema, registerSchema } from "./auth.schemas.js";
+import { loginSchema, registerSchema, verifyEmailSchema } from "./auth.schemas.js";
 import { getCurrentUser, login, logout, refresh, register, type SessionMeta } from "./auth.service.js";
+import { resendVerificationEmail, verifyEmail } from "./emailVerification.service.js";
 import { clearRefreshCookie, REFRESH_COOKIE, setRefreshCookie } from "./tokens.js";
 
 
@@ -45,5 +46,18 @@ export async function logoutController(req: Request, res: Response) {
     await logout(getRefreshToken(req));
     clearRefreshCookie(res);
 
+    res.status(204).send();
+}
+
+// 204 without the user: the endpoint is public, the link may be opened where nobody is logged in.
+// A logged-in frontend refetches /me to see emailVerifiedAt
+export async function verifyEmailController(req: Request, res: Response) {
+    const { token } = verifyEmailSchema.parse(req.body);
+    await verifyEmail(token);
+    res.status(204).send();
+}
+
+export async function resendVerificationController(req: Request, res: Response) {
+    await resendVerificationEmail(req.userId);
     res.status(204).send();
 }

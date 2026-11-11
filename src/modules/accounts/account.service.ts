@@ -21,6 +21,43 @@ async function sumByAccount(accountIds: string[], type: CategoryType, range: { f
     return new Map(rows.map((r) => [r.accountId, r._sum?.amount ?? new Prisma.Decimal(0)]));
 }
 
+// transaction.date is @db.Date (stored as UTC midnight), so month boundaries are in UTC too
+function currentMonthRange() {
+    const now = new Date();
+    return {
+        from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+        to: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+    };
+}
+
+type Decimal = InstanceType<typeof Prisma.Decimal>;
+
+// Loads all-time balance and this month's income/expense for the given accounts.
+// Returns a lookup, so every caller (list, single account, total) counts them the same way.
+async function getAccountTotals(accountIds: string[]) {
+    const month = currentMonthRange();
+    const [incomeSums, expenseSums, monthIncomeSums, monthExpenseSums] = await Promise.all([
+        sumByAccount(accountIds, 'INCOME'),
+        sumByAccount(accountIds, 'EXPENSE'),
+        sumByAccount(accountIds, 'INCOME', month),
+        sumByAccount(accountIds, 'EXPENSE', month),
+    ]);
+
+    const zero = new Prisma.Decimal(0);
+    return (account: { id: string; initialBalance: Decimal }) => ({
+        balance: account.initialBalance
+            .plus(incomeSums.get(account.id) ?? zero)
+            .minus(expenseSums.get(account.id) ?? zero),
+        monthIncome: monthIncomeSums.get(account.id) ?? zero,
+        monthExpense: monthExpenseSums.get(account.id) ?? zero,
+    });
+}
+
+async function getDefaultAccountId(userId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { defaultAccountId: true } });
+    return user?.defaultAccountId ?? null;
+}
+
 
 export async function getAccounts(userId: string, query: ListAccountsQuery) {
     const accounts = await prisma.account.findMany({
@@ -32,52 +69,69 @@ export async function getAccounts(userId: string, query: ListAccountsQuery) {
         orderBy: [{ archived: 'asc' }, { name: 'asc' }],
     });
 
-    const accountIds = accounts.map((a) => a.id);
-    const [incomeSums, expenseSums] = await Promise.all([
-        sumByAccount(accountIds, 'INCOME'),
-        sumByAccount(accountIds, 'EXPENSE'),
-    ])
+    const [totalsOf, defaultAccountId] = await Promise.all([
+        getAccountTotals(accounts.map((a) => a.id)),
+        getDefaultAccountId(userId),
+    ]);
 
-    const zero = new Prisma.Decimal(0);
-
-    return accounts.map((account) => {
-        const totalIncome = incomeSums.get(account.id) ?? zero;
-        const totalExpense = expenseSums.get(account.id) ?? zero;
-        const isMine = account.ownerId === userId;
-        return {
-            ...account,
-            balance: account.initialBalance.plus(totalIncome).minus(totalExpense),
-            isMine
-        };
-    });
+    return accounts.map((account) => ({
+        ...account,
+        ...totalsOf(account),
+        isMine: account.ownerId === userId,
+        isDefault: account.id === defaultAccountId,
+    }));
 }
 
-// Total of all included accounts converted to the user's base currency by NBU rates
+// Balance and this month's income/expense of all included accounts,
+// converted to the user's base currency by NBU rates
 export async function getTotalBalance(userId: string) {
     const [user, accounts, rates] = await Promise.all([
         prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { baseCurrency: true } }),
-        getAccounts(userId, { includeArchived: false }),
+        // archived and "not in total" accounts are filtered out here, so their transactions aren't summed at all
+        prisma.account.findMany({
+            where: { ownerId: userId, archived: false, includeInTotal: true },
+            select: { id: true, currency: true, initialBalance: true },
+        }),
         getExchangeRates(),
     ]);
 
-    // sum per currency first, so each currency is converted once
+    const totalsOf = await getAccountTotals(accounts.map((a) => a.id));
+
     const zero = new Prisma.Decimal(0);
-    const sums = new Map<string, typeof zero>();
+    type Totals = { balance: Decimal; monthIncome: Decimal; monthExpense: Decimal };
+    const emptyTotals: Totals = { balance: zero, monthIncome: zero, monthExpense: zero };
+
+    // sum per currency first, so each currency is converted once
+    const sums = new Map<string, Totals>();
     for (const account of accounts) {
-        if (!account.includeInTotal) continue;
-        const current = sums.get(account.currency) ?? zero;
-        sums.set(account.currency, current.plus(account.balance));
+        const current = sums.get(account.currency) ?? emptyTotals;
+        const { balance, monthIncome, monthExpense } = totalsOf(account);
+        sums.set(account.currency, {
+            balance: current.balance.plus(balance),
+            monthIncome: current.monthIncome.plus(monthIncome),
+            monthExpense: current.monthExpense.plus(monthExpense),
+        });
     }
 
-    const byCurrency = Array.from(sums, ([currency, balance]) => ({ currency, balance }));
-    const total = byCurrency.reduce(
-        (acc, { currency, balance }) => acc.plus(convert(balance, currency, user.baseCurrency, rates)),
-        zero,
+    const byCurrency = Array.from(sums, ([currency, totals]) => ({ currency, ...totals }));
+
+    const toBase = (amount: Decimal, currency: string) => convert(amount, currency, user.baseCurrency, rates);
+    const total = byCurrency.reduce<Totals>(
+        (acc, { currency, balance, monthIncome, monthExpense }) => ({
+            balance: acc.balance.plus(toBase(balance, currency)),
+            monthIncome: acc.monthIncome.plus(toBase(monthIncome, currency)),
+            monthExpense: acc.monthExpense.plus(toBase(monthExpense, currency)),
+        }),
+        emptyTotals,
     );
 
     return {
         currency: user.baseCurrency,
-        total: total.toDecimalPlaces(2),
+        total: total.balance.toDecimalPlaces(2),
+        monthIncome: total.monthIncome.toDecimalPlaces(2),
+        monthExpense: total.monthExpense.toDecimalPlaces(2),
+        // how many accounts the total is made of, counted with the same filter
+        accountsCount: accounts.length,
         byCurrency,
         rates: rates.uah,
         ratesDate: rates.date,
@@ -96,29 +150,16 @@ export async function getAccountById(userId: string, accountId: string) {
         throw AppError.notFound("Account not found");
     }
 
-    // transaction.date is @db.Date (stored as UTC midnight), so month boundaries are in UTC too
-    const now = new Date();
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-
-    const accountIds = [account.id];
-    const [incomeSums, expenseSums, monthIncomeSums, monthExpenseSums] = await Promise.all([
-        sumByAccount(accountIds, 'INCOME'),
-        sumByAccount(accountIds, 'EXPENSE'),
-        sumByAccount(accountIds, 'INCOME', { from: monthStart, to: nextMonthStart }),
-        sumByAccount(accountIds, 'EXPENSE', { from: monthStart, to: nextMonthStart }),
-    ])
-
-    const zero = new Prisma.Decimal(0);
-    const totalIncome = incomeSums.get(account.id) ?? zero;
-    const totalExpense = expenseSums.get(account.id) ?? zero;
+    const [totalsOf, defaultAccountId] = await Promise.all([
+        getAccountTotals([account.id]),
+        getDefaultAccountId(userId),
+    ]);
 
     return {
         ...account,
-        balance: account.initialBalance.plus(totalIncome).minus(totalExpense),
+        ...totalsOf(account),
         isMine: account.ownerId === userId,
-        monthIncome: monthIncomeSums.get(account.id) ?? zero,
-        monthExpense: monthExpenseSums.get(account.id) ?? zero,
+        isDefault: account.id === defaultAccountId,
     };
 }
 
@@ -147,7 +188,9 @@ export async function createAccount(userId: string, data: CreateAccountInput) {
         }
     });
 
-    return { ...account, balance: account.initialBalance };
+    // a new account has no transactions yet, so the totals are known without querying
+    const zero = new Prisma.Decimal(0);
+    return { ...account, balance: account.initialBalance, monthIncome: zero, monthExpense: zero };
 }
 
 export async function updateAccount(userId: string, accountId: string, data: UpdateAccountInput) {
@@ -167,17 +210,27 @@ export async function updateAccount(userId: string, accountId: string, data: Upd
         if (duplicate) throw AppError.conflict('Account with this name already exists');
     }
 
-    await prisma.account.update({
-        where: { id: accountId },
-        data: {
-            ...(data.name !== undefined && { name: data.name }),
-            ...(data.type !== undefined && { type: data.type }),
-            ...(data.initialBalance !== undefined && { initialBalance: data.initialBalance }),
-            ...(data.icon !== undefined && { icon: data.icon }),
-            ...(data.color !== undefined && { color: data.color }),
-            ...(data.archived !== undefined && { archived: data.archived }),
-            ...(data.includeInTotal !== undefined && { includeInTotal: data.includeInTotal }),
-        },
+    await prisma.$transaction(async (tx) => {
+        await tx.account.update({
+            where: { id: accountId },
+            data: {
+                ...(data.name !== undefined && { name: data.name }),
+                ...(data.type !== undefined && { type: data.type }),
+                ...(data.initialBalance !== undefined && { initialBalance: data.initialBalance }),
+                ...(data.icon !== undefined && { icon: data.icon }),
+                ...(data.color !== undefined && { color: data.color }),
+                ...(data.archived !== undefined && { archived: data.archived }),
+                ...(data.includeInTotal !== undefined && { includeInTotal: data.includeInTotal }),
+            },
+        });
+
+        // an archived account can't take new transactions, so it can't stay the default either
+        if (data.archived) {
+            await tx.user.updateMany({
+                where: { id: userId, defaultAccountId: accountId },
+                data: { defaultAccountId: null },
+            });
+        }
     });
 
     return getAccountById(userId, accountId);

@@ -24,6 +24,12 @@ const envSchema = z.object({
     //   // Опціональні сервіси
     //   REDIS_URL: z.string().url().optional(),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+    SMTP_HOST: z.string().default('smtp.gmail.com'),
+    SMTP_PORT: z.coerce.number().int().positive().default(465),
+    SMTP_USER: z.string().optional(),   // твоя адреса Gmail
+    SMTP_PASS: z.string().optional(),   // App Password
+    EMAIL_FROM: z.string().default('Money Tracker <no-reply@localhost>'),
+
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -1,20 +1,26 @@
 model User {
-    id              String     @id @default(uuid())
-    email           String     @unique
-    name            String?
-    avatarUrl       String?
-    passwordHash    String? // null, if user register via Google
-    googleId        String?    @unique
-    emailVerifiedAt DateTime?
-    systemRole      SystemRole @default(USER)
-    baseCurrency    String     @default("UAH") @db.Char(3)
-    isBlocked       Boolean    @default(false)
-    createdAt       DateTime   @default(now())
-    updatedAt       DateTime   @updatedAt
+    id               String     @id @default(uuid())
+    email            String     @unique
+    name             String?
+    avatarUrl        String?
+    passwordHash     String? // null, if user register via Google
+    googleId         String?    @unique
+    emailVerifiedAt  DateTime?
+    systemRole       SystemRole @default(USER)
+    baseCurrency     String     @default("UAH") @db.Char(3)
+    // pre-selected when adding a transaction; SetNull — the account is deleted, the default is gone
+    defaultAccountId String?
+    defaultAccount   Account?   @relation("UserDefaultAccount", fields: [defaultAccountId], references: [id], onDelete: SetNull)
+    isBlocked        Boolean    @default(false)
+    createdAt        DateTime   @default(now())
+    updatedAt        DateTime   @updatedAt
 
-    categories         Category[]
-    sessions           Session[]
-    ownedAccounts      Account[]
-    accountMemberships AccountMember[]
-    authoredTransactions       Transaction[]
+    categories              Category[]
+    sessions                Session[]
+    ownedAccounts           Account[]
+    accountMemberships      AccountMember[]
+    authoredTransactions    Transaction[]
+    emailVerificationTokens EmailVerificationToken[]
+
+    @@index([defaultAccountId])
 }

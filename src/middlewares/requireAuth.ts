@@ -19,5 +19,6 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
     if (!session || !isSessionActive(session)) throw AppError.unauthorized('Session expired or revoked');
 
     req.userId = userId;
+    req.sessionId = sessionId;
     next();
 };

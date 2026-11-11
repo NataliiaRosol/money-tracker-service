@@ -43,11 +43,11 @@ export async function verifyAccessToken(token: string) {
     }
 };
 
-export function generateRefreshToken() {
+export function generateToken() {
     return crypto.randomBytes(48).toString('base64url');
 }
 
-export function hashRefreshToken(token: string) {
+export function hashToken(token: string) {
     return sha256(token);
 }
 
